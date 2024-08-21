@@ -69,7 +69,7 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
      * @param l2Recipient The address of the user who will receive the tokens on L2
      * @param amount The amount of tokens to deposit
      */
-     //@audit-high can steal any arb amout of tokens from the vault
+    //@audit-high can steal any arb amout of tokens from the vault
     function depositTokensToL2(address from, address l2Recipient, uint256 amount) external whenNotPaused {
         //q the from is arbritray; why not make it msg.sender?
         //@audit-high an attack vector for arb from could be Alice approving the bridge to trasnsfer the tokesn on her
@@ -123,6 +123,7 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
      * @param s The s value of the signature
      * @param message The message/data to be sent to L1 (can be blank)
      */
+    //@audit-high signature replay attack
     function sendToL1(uint8 v, bytes32 r, bytes32 s, bytes memory message) public nonReentrant whenNotPaused {
         address signer = ECDSA.recover(MessageHashUtils.toEthSignedMessageHash(keccak256(message)), v, r, s);
 
@@ -133,6 +134,9 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
         (address target, uint256 value, bytes memory data) = abi.decode(message, (address, uint256, bytes));
 
         //@audit-high this target is arb too
+        //@audit-medium the user can send any arb data , this means tx that could encur high gas fees which the contract
+        // would have to pay
+        // GAS BOMB!
         (bool success,) = target.call{ value: value }(data);
         if (!success) {
             revert L1BossBridge__CallFailed();

