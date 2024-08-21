@@ -16,6 +16,8 @@ contract L1Vault is Ownable {
         token = _token;
     }
 
+    //q why not hardcode the approval for the bridge i.e the owner's address?
+    //q where are we locking and unlocking the funds?
     function approveTo(address target, uint256 amount) external onlyOwner {
         token.approve(target, amount);
     }
