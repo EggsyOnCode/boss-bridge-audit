@@ -20,8 +20,12 @@ contract TokenFactory is Ownable {
      * @param symbol The symbol of the new token
      * @param contractBytecode The bytecode of the new token
      */
+    //q is this supposed to deploy an L1Token instance?
+    //q how are checking if the bytecode is that of an ERC20 contract?
+    //@audit-medium centralization risk
     function deployToken(string memory symbol, bytes memory contractBytecode) public onlyOwner returns (address addr) {
         assembly {
+            //@audit-high this opcode is not supported on ZkSync era! hence its deployment would fail
             addr := create(0, add(contractBytecode, 0x20), mload(contractBytecode))
         }
         s_tokenToAddress[symbol] = addr;
